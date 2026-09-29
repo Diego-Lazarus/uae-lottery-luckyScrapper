@@ -11,14 +11,14 @@ The API returns at most 10 draws per call. Older draws are fetched by passing
 the oldest draw number seen so far (phase=...) with alreadyDrawn=0 and
 includeSelf=0, just as the page's infinite scroll does.
 
-For a window with a download button, run luckyday_app.py instead.
+This module holds the shared logic. Front ends:
+    luckyday_app.py   window with a download button
+    luckyday_cli.py   command line with JSON/CSV output, for scripts and AI agents
 
 Requirements:  pip install requests openpyxl
-Usage:         python luckyday_scraper.py [output.xlsx]
-               python luckyday_scraper.py --from-raw luckyday_raw.json [output.xlsx]
+Usage:         python luckyday_scraper.py [output.xlsx]   (same as: luckyday_cli.py export)
 """
 
-import json
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -58,15 +58,16 @@ def fetch_page(session, before_phase=None):
         except Exception as e:
             if attempt == 3:
                 raise
-            print(f"  retrying after error: {e}")
+            print(f"retrying after error: {e}", file=sys.stderr)
             time.sleep(2 * (attempt + 1))
 
 
-def fetch_all_draws(on_progress=print, stop_before=None):
+def fetch_all_draws(on_progress=None, stop_before=None, max_draws=None):
     """Page back through the history, newest first.
 
-    on_progress  called with a status message after each page
+    on_progress  optional; called with a status message after each page
     stop_before  optional date; stop paging once draws are older than it
+    max_draws    optional; stop paging once this many draws are collected
     """
     draws, seen = [], set()
     with requests.Session() as s:
@@ -80,8 +81,9 @@ def fetch_all_draws(on_progress=print, stop_before=None):
                 seen.add(d["phase"])
                 draws.append(d)
             before = new[-1]["phase"]
-            on_progress(f"Fetched {len(draws)} draws (oldest so far: {before})")
-            if len(batch) < 10:
+            if on_progress:
+                on_progress(f"Fetched {len(draws)} draws (oldest so far: {before})")
+            if len(batch) < 10 or (max_draws and len(draws) >= max_draws):
                 break
             oldest = datetime.fromtimestamp(int(new[-1]["expectedPrizeTimestamp"]) / 1000, UAE_TZ).date()
             if stop_before and oldest < stop_before:
@@ -136,6 +138,56 @@ def parse_draw(d):
         "tiers": tiers,
         "total_winners": d.get("totalWinningBetCount"),
         "rules_version": d.get("configVersion"),
+    }
+
+
+def fetch_raw(start=None, end=None, last=None, on_progress=None):
+    """Fetch only as many pages as a selection needs (raw API phases, newest first)."""
+    return fetch_all_draws(on_progress=on_progress, stop_before=start,
+                           max_draws=last if (last and not start and not end) else None)
+
+
+def load_draws(start=None, end=None, last=None, raw=None, on_progress=None):
+    """Parsed draws, newest first, filtered to a UAE date range and/or the newest `last` draws.
+
+    raw: optional list of raw API phases (e.g. a saved dump) instead of fetching.
+    """
+    if raw is None:
+        raw = fetch_raw(start, end, last, on_progress)
+    draws = [parse_draw(d) for d in raw]
+    if len({p["draw_no"] for p in draws}) != len(draws):
+        raise ValueError("duplicate draw numbers in the data")
+    draws.sort(key=lambda p: (p["when"], p["draw_no"]), reverse=True)
+    if start:
+        draws = [p for p in draws if p["when"].date() >= start]
+    if end:
+        draws = [p for p in draws if p["when"].date() <= end]
+    if last:
+        draws = draws[:last]
+    return draws
+
+
+# Stable machine-readable tier names for JSON output
+TIER_IDS = {"prize1": "jackpot", "prize2": "second", "prize3": "third", "prize4": "fourth",
+            "prize5": "fifth", "rafflePrize": "lucky_chance"}
+
+
+def draw_to_dict(p):
+    """JSON-friendly form of a parsed draw (schema_version 1)."""
+    paid = [t["paid"] for t in p["tiers"].values() if t["paid"] is not None]
+    return {
+        "draw_no": p["draw_no"],
+        "date": p["when"].strftime("%Y-%m-%d"),
+        "time_uae": p["when"].strftime("%H:%M"),
+        "weekday": p["when"].strftime("%A"),
+        "numbers": p["numbers"],
+        "lucky_month": p["month"],
+        "rules_version": p["rules_version"],
+        "total_winners": p["total_winners"],
+        "total_paid_aed": sum(paid) if paid else None,
+        "tiers": {TIER_IDS[k]: {"winners": t["winners"], "prize_aed": t["prize"], "paid_aed": t["paid"]}
+                  for k, t in p["tiers"].items()},
+        "lucky_chance_ids": p["raffle"],
     }
 
 
@@ -414,31 +466,7 @@ def build_workbook(draws, path):
     wb.save(path)
 
 
-def main():
-    args = sys.argv[1:]
-    raw_in = None
-    if "--from-raw" in args:  # rebuild the workbook from a saved raw JSON without refetching
-        i = args.index("--from-raw")
-        raw_in = args[i + 1]
-        del args[i:i + 2]
-    out = args[0] if args else "uae_lottery_luckyday_results.xlsx"
-
-    if raw_in:
-        with open(raw_in, encoding="utf-8") as f:
-            raw = json.load(f)
-        print(f"Loaded {len(raw)} raw draws from {raw_in}")
-    else:
-        print("Fetching Lucky Day results...")
-        raw = fetch_all_draws()
-        with open("luckyday_raw.json", "w", encoding="utf-8") as f:
-            json.dump(raw, f, ensure_ascii=False, indent=1)
-
-    draws = [parse_draw(d) for d in raw]
-    if len({p["draw_no"] for p in draws}) != len(draws):
-        raise SystemExit("duplicate draw numbers in data")
-    build_workbook(draws, out)
-    print(f"Saved {len(draws)} draws to {out}")
-
-
 if __name__ == "__main__":
-    main()
+    # The command line lives in luckyday_cli.py; this keeps the old usage working.
+    from luckyday_cli import main
+    sys.exit(main(legacy=True))

@@ -19,7 +19,7 @@ from datetime import date
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from luckyday_scraper import build_workbook, fetch_all_draws, parse_draw
+from luckyday_scraper import build_workbook, load_draws
 
 APP_TITLE = "Lucky Day Results"
 DEFAULT_NAME = "uae_lottery_luckyday_results.xlsx"
@@ -312,14 +312,11 @@ class App(tk.Tk):
     def _work(self, start, end, path):
         """Runs in a background thread; talks to the UI only through self.events."""
         try:
-            raw = fetch_all_draws(on_progress=lambda m: self.events.put(("status", m)), stop_before=start)
-            self.events.put(("status", "Building spreadsheet…"))
-            draws = [parse_draw(d) for d in raw]
-            if start:
-                draws = [p for p in draws if p["when"].date() >= start and (not end or p["when"].date() <= end)]
+            draws = load_draws(start, end, on_progress=lambda m: self.events.put(("status", m)))
             if not draws:
                 self.events.put(("empty", None))
                 return
+            self.events.put(("status", "Building spreadsheet…"))
             build_workbook(draws, path)
             self.events.put(("done", (path, draws)))
         except PermissionError:
