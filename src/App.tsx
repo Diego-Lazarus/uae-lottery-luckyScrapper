@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DatasetStats } from './components/DatasetStats.tsx'
+import { LatestDraw } from './components/LatestDraw.tsx'
 import { RetrievalPanel } from './components/RetrievalPanel.tsx'
 import { SpreadsheetWidget } from './components/SpreadsheetWidget.tsx'
 import { StatusBar, type Status } from './components/StatusBar.tsx'
@@ -8,7 +9,7 @@ import { fmtInt, plural } from './format.ts'
 import { clearAll, countChangedSince, getAllDraws, getMeta, markExported, upsertDraws } from './lib/db.ts'
 import { validateDraws } from './lib/snapshot.ts'
 import { LiveApiSource, SnapshotSource, type DrawSource } from './lib/sources.ts'
-import type { DatasetMeta, DateRange, RetrievalMode, UpsertSummary } from './lib/types.ts'
+import type { DatasetMeta, DateRange, LuckyDayDraw, RetrievalMode, UpsertSummary } from './lib/types.ts'
 import { downloadWorkbook, utcStamp } from './lib/xlsx.ts'
 
 const PAGE_ESTIMATE = 10 // pages of 10 for the full history, used for live progress only
@@ -21,6 +22,7 @@ export default function App() {
 
   const [meta, setMeta] = useState<DatasetMeta | null>(null)
   const [changedSinceExport, setChangedSinceExport] = useState<number | null>(null)
+  const [latest, setLatest] = useState<LuckyDayDraw | null>(null)
   const [mode, setMode] = useState<RetrievalMode>('latest')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -33,6 +35,7 @@ export default function App() {
   const refresh = useCallback(async () => {
     const [m, draws] = await Promise.all([getMeta(), getAllDraws()])
     setMeta(m)
+    setLatest(draws[0] ?? null)
     setChangedSinceExport(countChangedSince(draws, m?.lastExportAt ?? null))
   }, [])
 
@@ -119,15 +122,29 @@ export default function App() {
 
   return (
     <>
+      <header className="topbar">
+        <div className="topbar-inner">
+          <span className="brand">
+            <span className="brand-mark" aria-hidden="true" />
+            Lucky Day Results
+          </span>
+          <span className="badge" title="Not affiliated with The UAE Lottery">Unofficial tool</span>
+          <a className="topbar-link" href="https://www.theuaelottery.ae/lottery/luckyday/results" target="_blank" rel="noreferrer">
+            Official results ↗
+          </a>
+        </div>
+      </header>
+
       <main className="shell">
-        <header className="page-head">
-          <h1>UAE Lottery Lucky Day Results</h1>
-          <p className="muted">
-            Retrieve official draw results and download them as an analysis-ready spreadsheet.
-            Results are kept in this browser only while the page is open, and cleared automatically when you
-            close or reload it.
+        <section className="hero">
+          <h1>Lucky Day Draw Results</h1>
+          <p>
+            Download the official draw results as an analysis-ready spreadsheet. Results are kept in this browser only
+            while the page is open, and cleared automatically when you close or reload it.
           </p>
-        </header>
+        </section>
+
+        <LatestDraw draw={latest} />
 
         <RetrievalPanel
           mode={mode} from={from} to={to} busy={busy}
@@ -162,6 +179,10 @@ export default function App() {
         </details>
 
         <footer className="foot small muted">
+          <p className="disclaimer">
+            Unofficial tool. Not affiliated with, or endorsed by, The UAE Lottery or The Game LLC. Always check
+            results on the official website.
+          </p>
           <span>
             Source: {source.kind === 'live' ? 'official API via dev proxy' : 'published snapshot of the official results'}
             {' · '}
