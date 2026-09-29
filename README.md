@@ -143,18 +143,3 @@ pip install requests openpyxl
 python reference/luckyday_scraper.py                       # fetch the full history and write the xlsx
 python reference/luckyday_scraper.py --from-raw raw.json   # rebuild from a saved raw API dump
 ```
-
-## Deploying to GitHub Pages
-
-This repository is already set up. To reproduce it elsewhere:
-
-1. Push this branch as `web`.
-2. **Settings → Pages → Build and deployment → Source: GitHub Actions.**
-3. **Settings → Environments → github-pages → Deployment branches:** allow `web`.
-4. **Settings → Actions → General → Workflow permissions: Read and write.** The workflow commits the
-   updated `public/data/luckyday.json`.
-5. A push to `web` tests, builds and deploys. Refresh the data by hand with **Actions → Run workflow**
-   on `web` (`mode: full` rebuilds the whole history; `force_deploy` redeploys without data changes).
-
-The build uses relative paths (`base: './'`), so it works at `https://<user>.github.io/<repo>/` or on a
-custom domain.
