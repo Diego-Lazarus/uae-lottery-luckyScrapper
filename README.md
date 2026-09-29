@@ -1,8 +1,13 @@
-# UAE Lottery Lucky Day Results
+# UAE Lottery Lucky Day Results: web version
+
+> This is the **`web` branch**. For the simple desktop tool, see the
+> [`main` branch](https://github.com/Diego-Lazarus/uae-lottery-luckyScrapper/tree/main).
+>
+> Live site: https://diego-lazarus.github.io/uae-lottery-luckyScrapper/
 
 A small static web utility that downloads official **UAE Lottery Lucky Day** draw results as an
-analysis-ready Excel workbook. It runs entirely in the browser. There is no backend, and results
-are stored locally in your browser (IndexedDB).
+analysis-ready Excel workbook. It runs entirely in the browser, with no backend. Results are kept in
+the browser only while the page is open, and are cleared automatically when you close or reload it.
 
 - **Get Results**: choose *Latest 10*, *From Date*, *Date Range* or *All Results*. Retrieved draws are
   merged into one local dataset with no duplicates.
@@ -21,19 +26,19 @@ The official results API (`/qapi/command/execute?command=660301`) returns
 other origin, including GitHub Pages. This was verified: a `fetch()` from another origin fails with
 *"Failed to fetch"*.
 
-So the site publishes a **snapshot**:
+So the site publishes a **snapshot**, refreshed **by hand**. There is no schedule:
 
 ```
-Wed/Sat 22:05 UAE (GitHub Actions)
+GitHub → Actions → "Lucky Day snapshot and Pages deploy" → Run workflow (branch: web)
   → fetch official latest 10 → normalize + validate
   → load public/data/luckyday.json → reconcile by draw number
   → no changes?  yes → finish (no commit, no deploy)
                  no  → merge → validate full set → commit JSON → test → build → deploy Pages
-23:05 UAE: the same run again (normally a no-op)
 ```
 
-In the app, **Get Results** fetches the same-origin `data/luckyday.json`, applies the selected mode and
-upserts the matching draws into IndexedDB. The data is as fresh as the last scheduled run. The
+Run it after a draw (Wednesdays and Saturdays, results are usually out after 22:00 UAE) to bring the
+site up to date. In the app, **Get Results** fetches the same-origin `data/luckyday.json`, applies the
+selected mode and loads the matching draws. The data is as fresh as the last workflow run; the
 *Published snapshot* time is shown in the app.
 
 ### Snapshot commands
@@ -71,9 +76,10 @@ summary, never into the published JSON, so a check with no changes never trigger
 - Upsert rules: a missing draw is **added**; a draw whose source fields differ is **updated**; an
   identical draw is **unchanged**. Local bookkeeping (`firstSeenAt`, `updatedAt`) is ignored when
   comparing. `dataRevision` increases only when something was added or changed.
-- Data stays in this browser profile only. It is not shared with other browsers or devices, and it
-  survives reloads.
-- To clear it, use **Clear local data** in the app, or your browser's site-data settings.
+- **Cleared automatically:** stored results are deleted when the page is opened (so a reload starts
+  empty) and, best-effort, when it is closed. Nothing is kept between visits.
+- **Clear local data** in the app empties it immediately.
+- Data is never sent anywhere. It exists only in this browser tab's session.
 
 ## The spreadsheet
 
@@ -140,15 +146,15 @@ python reference/luckyday_scraper.py --from-raw raw.json   # rebuild from a save
 
 ## Deploying to GitHub Pages
 
-1. Create a GitHub repository and push this folder as the repository root, on the `main` branch.
+This repository is already set up. To reproduce it elsewhere:
+
+1. Push this branch as `web`.
 2. **Settings → Pages → Build and deployment → Source: GitHub Actions.**
-3. **Settings → Actions → General → Workflow permissions: Read and write.** The scheduled job commits
-   the updated `public/data/luckyday.json`. If `main` has branch protection, allow GitHub Actions to
-   push.
-4. The push runs the workflow, which tests, builds and deploys. After that it runs every Wednesday and
-   Saturday at 22:05 and 23:05 UAE.
-5. Check the first scheduled run's log to confirm the API accepts requests from GitHub's runners. If
-   it refuses them, the job fails and the last good deployment stays live.
+3. **Settings → Environments → github-pages → Deployment branches:** allow `web`.
+4. **Settings → Actions → General → Workflow permissions: Read and write.** The workflow commits the
+   updated `public/data/luckyday.json`.
+5. A push to `web` tests, builds and deploys. Refresh the data by hand with **Actions → Run workflow**
+   on `web` (`mode: full` rebuilds the whole history; `force_deploy` redeploys without data changes).
 
 The build uses relative paths (`base: './'`), so it works at `https://<user>.github.io/<repo>/` or on a
 custom domain.

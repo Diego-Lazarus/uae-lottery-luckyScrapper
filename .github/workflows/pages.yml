@@ -1,9 +1,8 @@
 name: Lucky Day snapshot and Pages deploy
 
+# No schedule: refresh the published results by hand from the Actions tab
+# (Run workflow, branch "web"). Pushes to the web branch also redeploy.
 on:
-  schedule:
-    - cron: "5 18 * * 3,6"   # 22:05 UAE, Wed/Sat (primary)
-    - cron: "5 19 * * 3,6"   # 23:05 UAE, Wed/Sat (intentionally redundant backup)
   workflow_dispatch:
     inputs:
       mode:
@@ -16,7 +15,7 @@ on:
         type: boolean
         default: false
   push:
-    branches: [main]
+    branches: [web]
 
 permissions:
   contents: write   # commit the updated snapshot

@@ -30,15 +30,26 @@ export default function App() {
   const [exportError, setExportError] = useState<string | null>(null)
   const busy = status.kind === 'fetching' || status.kind === 'processing' || status.kind === 'saving'
 
-  /** Local-first: everything shown on load comes from IndexedDB, not the network. */
   const refresh = useCallback(async () => {
     const [m, draws] = await Promise.all([getMeta(), getAllDraws()])
     setMeta(m)
     setChangedSinceExport(countChangedSince(draws, m?.lastExportAt ?? null))
   }, [])
 
+  /**
+   * Results only live while the page is open: stored data is cleared when the
+   * page opens (covering reloads, and closes whose cleanup didn't finish) and,
+   * best-effort, when it is closed.
+   */
   useEffect(() => {
-    refresh().catch((e) => setStatus({ kind: 'error', text: `Could not open local storage: ${(e as Error).message}` }))
+    clearAll()
+      .then(refresh)
+      .catch((e) => setStatus({ kind: 'error', text: `Could not open local storage: ${(e as Error).message}` }))
+    const onHide = (e: PageTransitionEvent) => {
+      if (!e.persisted) void clearAll()
+    }
+    window.addEventListener('pagehide', onHide)
+    return () => window.removeEventListener('pagehide', onHide)
   }, [refresh])
 
   async function getResults() {
@@ -99,7 +110,7 @@ export default function App() {
   }
 
   async function clearLocal() {
-    if (!window.confirm('Remove all Lucky Day results stored in this browser? You can retrieve them again at any time.')) return
+    if (!window.confirm('Remove the Lucky Day results currently loaded in this page? You can retrieve them again at any time.')) return
     await clearAll()
     setSummary(null)
     setStatus({ kind: 'idle' })
@@ -113,7 +124,8 @@ export default function App() {
           <h1>UAE Lottery Lucky Day Results</h1>
           <p className="muted">
             Retrieve official draw results and download them as an analysis-ready spreadsheet.
-            Results are stored locally in this browser.
+            Results are kept in this browser only while the page is open, and cleared automatically when you
+            close or reload it.
           </p>
         </header>
 
