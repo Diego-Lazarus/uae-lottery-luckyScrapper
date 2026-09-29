@@ -11,6 +11,8 @@ The API returns at most 10 draws per call. Older draws are fetched by passing
 the oldest draw number seen so far (phase=...) with alreadyDrawn=0 and
 includeSelf=0, just as the page's infinite scroll does.
 
+For a window with a download button, run luckyday_app.py instead.
+
 Requirements:  pip install requests openpyxl
 Usage:         python luckyday_scraper.py [output.xlsx]
                python luckyday_scraper.py --from-raw luckyday_raw.json [output.xlsx]
@@ -60,7 +62,12 @@ def fetch_page(session, before_phase=None):
             time.sleep(2 * (attempt + 1))
 
 
-def fetch_all_draws():
+def fetch_all_draws(on_progress=print, stop_before=None):
+    """Page back through the history, newest first.
+
+    on_progress  called with a status message after each page
+    stop_before  optional date; stop paging once draws are older than it
+    """
     draws, seen = [], set()
     with requests.Session() as s:
         before = None
@@ -73,8 +80,11 @@ def fetch_all_draws():
                 seen.add(d["phase"])
                 draws.append(d)
             before = new[-1]["phase"]
-            print(f"  fetched {len(draws)} draws (oldest so far: {before})")
+            on_progress(f"Fetched {len(draws)} draws (oldest so far: {before})")
             if len(batch) < 10:
+                break
+            oldest = datetime.fromtimestamp(int(new[-1]["expectedPrizeTimestamp"]) / 1000, UAE_TZ).date()
+            if stop_before and oldest < stop_before:
                 break
             time.sleep(0.5)  # be polite
     return draws

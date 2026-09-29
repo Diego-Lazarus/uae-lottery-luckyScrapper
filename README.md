@@ -1,154 +1,64 @@
 # UAE Lottery Lucky Day Results
 
-A small static web utility that downloads official **UAE Lottery Lucky Day** draw results as an
-analysis-ready Excel workbook. It runs entirely in the browser. There is no backend, and results
-are stored locally in your browser (IndexedDB).
+A simple desktop tool that downloads the official **UAE Lottery Lucky Day** draw results from
+[theuaelottery.ae](https://www.theuaelottery.ae/lottery/luckyday/results) and saves them as an Excel
+spreadsheet for data analysis.
 
-- **Get Results**: choose *Latest 10*, *From Date*, *Date Range* or *All Results*. Retrieved draws are
-  merged into one local dataset with no duplicates.
-- **Download XLSX**: rebuilds `uae_lottery_luckyday_results.xlsx` from **all** draws stored in the
-  browser, every time you click.
+## Setup
 
-Deployed users need only a browser. Node and Python are used only for development, the snapshot job
-and the reference checks.
+1. Install [Python 3.10+](https://www.python.org/downloads/). On Windows, tick **"Add Python to PATH"**.
+2. Download this repository (**Code → Download ZIP**) and unzip it.
 
----
+## Use
 
-## How the data gets to the browser
+Double-click **`Lucky Day Results.bat`**. The first time, it installs the two packages it needs.
 
-The official results API (`/qapi/command/execute?command=660301`) returns
-`Access-Control-Allow-Origin: https://www.theuaelottery.ae`. Browsers therefore **block** calls from any
-other origin, including GitHub Pages. This was verified: a `fetch()` from another origin fails with
-*"Failed to fetch"*.
+1. Choose **All results**, or **Date range** and enter dates as `YYYY-MM-DD`.
+2. Click **Download results…** and choose where to save the file.
+3. When it's done, click **Open spreadsheet**.
 
-So the site publishes a **snapshot**:
+The results are fetched live every time, and nothing else is stored.
 
-```
-Wed/Sat 22:05 UAE (GitHub Actions)
-  → fetch official latest 10 → normalize + validate
-  → load public/data/luckyday.json → reconcile by draw number
-  → no changes?  yes → finish (no commit, no deploy)
-                 no  → merge → validate full set → commit JSON → test → build → deploy Pages
-23:05 UAE: the same run again (normally a no-op)
+On macOS or Linux, or without the .bat file:
+
+```bash
+pip install -r requirements.txt
+python luckyday_app.py
 ```
 
-In the app, **Get Results** fetches the same-origin `data/luckyday.json`, applies the selected mode and
-upserts the matching draws into IndexedDB. The data is as fresh as the last scheduled run. The
-*Published snapshot* time is shown in the app.
+Command line, no window: `python luckyday_scraper.py results.xlsx`
 
-### Snapshot commands
-
-| Command | What it does |
-|---|---|
-| `npm run snapshot` | Normal run. Fetches the official **latest 10** and reconciles them with the committed snapshot: new draw numbers are added, corrected recent draws are replaced, identical ones are left alone. Writes the file **only if draw data changed**. Never removes existing draws. |
-| `npm run snapshot:full` | Full rebuild through the verified history paging (`phase=<oldest>&alreadyDrawn=0&includeSelf=0`, 10 per page). Used for the first snapshot and for explicit rebuilds. |
-
-`npm run snapshot` escalates to a full rebuild on its own when there is no snapshot, when more than 10
-draws were missed, or when the API reports history older than the snapshot.
-
-The script never works out an "expected" draw from today's date. The official latest-results response
-is authoritative, so a late, postponed or skipped draw simply means "no change yet". The run fails only
-on real retrieval or validation problems: duplicate draw numbers, anything other than exactly 6 numbers
-from 1–31, a Lucky Month outside 1–12, bad dates, an incremental run that would remove draws, or a full
-rebuild that shrinks the dataset below 95%.
-
-`snapshotGeneratedAt` changes only when draw data changes. Check times go to the Actions log and step
-summary, never into the published JSON, so a check with no changes never triggers a redeploy.
-
-### Manual runs (GitHub → Actions → *Lucky Day snapshot and Pages deploy* → Run workflow)
-
-- `mode: full` rebuilds the whole history.
-- `force_deploy: true` rebuilds and redeploys even if the data is unchanged.
-
----
-
-## Local storage (IndexedDB)
-
-- Database `uae-lottery`:
-  - store `draws`, keyed by the draw number (a **string**, e.g. `"260926"`);
-  - store `meta`, with dataset info: counts, oldest/newest draw, last checked/changed, snapshot time,
-    last mode/range, `dataRevision`, last export.
-- Upsert rules: a missing draw is **added**; a draw whose source fields differ is **updated**; an
-  identical draw is **unchanged**. Local bookkeeping (`firstSeenAt`, `updatedAt`) is ignored when
-  comparing. `dataRevision` increases only when something was added or changed.
-- Data stays in this browser profile only. It is not shared with other browsers or devices, and it
-  survives reloads.
-- To clear it, use **Clear local data** in the app, or your browser's site-data settings.
-
-## The spreadsheet
-
-Every sheet is a single rectangular table: one header row, no merged cells and **no formulas**, so it
-reads cleanly into Excel, pandas (`pd.read_excel(path, sheet_name=None)`), R or Power Query.
+## What's in the spreadsheet
 
 | Sheet | Contents |
 |---|---|
-| Results | One row per draw: Draw No (text), Draw Seq (1 = oldest), date parts, weekday, N1–N6, Lucky Month, winners and nominal prize per tier, Total Winners, Total Paid AED, Lucky Chance IDs, Rules Version |
-| Draw Features | Sum, mean, min/max/range, odd/even, low/high, band counts, consecutive pairs, max gap, repeats from the previous draw, draw-day and draw-month matches |
-| Numbers Long | One row per drawn number (tidy format) with Ball Type Day/Month and sorted position |
-| Number Matrix | One-hot D1–D31 and M1–M12 per draw, for clustering and correlation |
-| Day Number Stats / Month Stats | Frequency, expected count, deviation, z-score, per-weekday and per-rules-version counts, last seen, gaps |
-| Pair Frequency | 31×31 co-occurrence counts (the diagonal holds single counts) |
-| Lucky Chance | One row per winning Lucky Chance ID |
-| Data Dictionary | Every column explained, with caveats |
-| Metadata (hidden) | Dataset ID, generation time, draw range, source |
+| Results | One row per draw: date, weekday, the six numbers (N1–N6), Lucky Month, winners and prizes per tier, rules version |
+| Draw Features | Sum, range, odd/even, low/high, consecutive pairs, gaps, repeats from the previous draw |
+| Numbers Long | One row per drawn number, the best layout for pivot tables, pandas and R |
+| Number Matrix | 0/1 grid of which numbers came up in each draw, for clustering and correlation |
+| Day Number Stats / Month Stats | How often each number was drawn vs expected, z-score, last seen, gaps |
+| Pair Frequency | How often each pair of numbers was drawn together |
+| Lucky Chance | Winning Lucky Chance IDs |
+| Data Dictionary | What every column means |
 
-**Analysis caveats:**
-- The API publishes the six numbers **sorted**, not in ball-draw order. Treat N1–N6 as order
-  statistics.
-- *Prize AED* is the **nominal** per-winner amount (the jackpot shows 30M even with 0 winners). Use
-  *Total Paid AED* for money actually paid.
-- The game changed over time, so use **Rules Version** when comparing periods:
+Every sheet is a plain table with no formulas. If you choose a date range, all statistics are
+calculated for that range only.
 
-  | Rules version | Schedule | Draw time | Lucky Chance IDs |
-  |---|---|---|---|
-  | 1.0.0 | fortnightly Saturday | 20:30 | 7 × AED 100k |
-  | 1.0.1 | weekly Saturday | 20:30 | 3 × AED 100k |
-  | 1.0.2 | Wednesday + Saturday | 21:30 | 3 × AED 50k |
+**Worth knowing:**
+- The site publishes the six numbers **sorted**, not in the order the balls were drawn.
+- The *Prize* columns show the advertised amount per winner, even when nobody won. *Total Paid* is what
+  was actually paid.
+- The game's schedule, draw time and prizes changed over time. Use the **Rules Version** column when
+  comparing periods:
 
-  The number game itself (6 from 1–31 plus a month from 1–12) is the same in every version.
-- All dates are UAE time (UTC+4). Excel date cells hold the UAE wall-clock date, so they don't shift
-  when opened in another timezone.
+  | Rules version | Schedule | Draw time |
+  |---|---|---|
+  | 1.0.0 | every other Saturday | 20:30 |
+  | 1.0.1 | every Saturday | 20:30 |
+  | 1.0.2 | Wednesday and Saturday | 21:30 |
+
+- Dates and times are UAE time.
 
 ---
 
-## Development
-
-Requires Node 22.18+. The TypeScript scripts run directly with Node's built-in type stripping.
-
-```bash
-npm install
-npm run dev              # http://localhost:5173 (tick "Dev: use live API" to call the API through the Vite proxy)
-npm test                 # Vitest: parsing, paging, reconciliation, IndexedDB, features, XLSX round-trip
-npm run snapshot         # latest-10 reconciliation into public/data/luckyday.json
-npm run snapshot:full    # full history rebuild
-npm run verify:reference # web workbook must match reference/uae_lottery_luckyday_results.xlsx cell for cell
-npm run build            # static site in dist/
-npm run preview          # serve dist/ locally
-```
-
-### Reference implementation
-
-`reference/luckyday_scraper.py` is the original, verified Python scraper, and
-`reference/uae_lottery_luckyday_results.xlsx` is its output. The TypeScript port is checked against
-it: `npm run verify:reference` compares every sheet except Metadata cell for cell.
-
-```bash
-pip install requests openpyxl
-python reference/luckyday_scraper.py                       # fetch the full history and write the xlsx
-python reference/luckyday_scraper.py --from-raw raw.json   # rebuild from a saved raw API dump
-```
-
-## Deploying to GitHub Pages
-
-1. Create a GitHub repository and push this folder as the repository root, on the `main` branch.
-2. **Settings → Pages → Build and deployment → Source: GitHub Actions.**
-3. **Settings → Actions → General → Workflow permissions: Read and write.** The scheduled job commits
-   the updated `public/data/luckyday.json`. If `main` has branch protection, allow GitHub Actions to
-   push.
-4. The push runs the workflow, which tests, builds and deploys. After that it runs every Wednesday and
-   Saturday at 22:05 and 23:05 UAE.
-5. Check the first scheduled run's log to confirm the API accepts requests from GitHub's runners. If
-   it refuses them, the job fails and the last good deployment stays live.
-
-The build uses relative paths (`base: './'`), so it works at `https://<user>.github.io/<repo>/` or on a
-custom domain.
+Unofficial tool, not affiliated with The UAE Lottery. Mostly agent coded.
